@@ -217,26 +217,6 @@ CATEGORIES
 - `POST /api/admin/set-admin` - Gérer rôle admin
 - `POST /api/admin/toggle-account` - Activer/désactiver compte
 
-## 🚨 Runbook
-
-### Problème: Utilisateur ne peut pas se connecter
-
-1. Vérifier que le compte existe dans `auth.users`
-2. Vérifier le statut dans `profiles` (confirmed, rejected)
-3. Si pending, demander à un admin de valider
-
-### Problème: Import Shopify échoue
-
-1. Vérifier la configuration Shopify de l'utilisateur
-2. Tester le token via `/api/shopify/validate`
-3. Vérifier les logs serveur pour erreurs API Shopify
-4. Vérifier les permissions du token Shopify (write_products)
-
-### Problème: Rate limiting
-
-1. Attendre le délai indiqué
-2. Si persistant, vérifier la config Upstash
-3. Augmenter les limites si nécessaire dans `src/lib/ratelimit/index.ts`
 
 ## 📄 License
 
