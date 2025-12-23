@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  app:
+    container_name: eurodesign-interface
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      NEXT_TELEMETRY_DISABLED: "1"
+      NODE_OPTIONS: ${NODE_OPTIONS:---max-old-space-size=4096}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
