@@ -5,6 +5,7 @@ const ALLOWED_ORIGINS = [
   'http://localhost:3000',
   'https://eurodesignfrancepro.fr',
   'https://www.eurodesignfrancepro.fr',
+  'https://app.eurodesignfrancepro.fr',
 ];
 
 const PUBLIC_ROUTES = [
