@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import MainLayout from '@/components/layout/MainLayout';
 import Button from '@/components/ui/Button';
-import { CheckCircle, XCircle, Shield, ShieldOff, UserCheck, UserX } from 'lucide-react';
+import { CheckCircle, XCircle, Shield, ShieldOff, UserCheck, UserX, Eye } from 'lucide-react';
+import Modal from '@/components/ui/Modal';
 
 interface PendingProfile {
   userId: string;
@@ -31,11 +32,22 @@ interface User {
   createdAt: string;
 }
 
+interface UserDetails extends User {
+  siret: string | null;
+  vatNumber: string | null;
+  companyPhone: string | null;
+  shopDomain: string | null;
+  updatedAt: string;
+}
+
 export default function AdminUserPage() {
   const [pendingProfiles, setPendingProfiles] = useState<PendingProfile[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [selectedUser, setSelectedUser] = useState<UserDetails | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [loadingDetails, setLoadingDetails] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
@@ -139,6 +151,28 @@ export default function AdminUserPage() {
     } finally {
       setActionLoading(null);
     }
+  };
+
+  const handleViewDetails = async (userId: string) => {
+    setLoadingDetails(true);
+    try {
+      const response = await fetch(`/api/admin/user-details?userId=${userId}`);
+      const data = await response.json();
+
+      if (data.success) {
+        setSelectedUser(data.data.user);
+        setIsModalOpen(true);
+      }
+    } catch {
+      console.error('Échec du chargement des détails');
+    } finally {
+      setLoadingDetails(false);
+    }
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setSelectedUser(null);
   };
 
   if (loading) {
@@ -278,6 +312,14 @@ export default function AdminUserPage() {
                         <td className="px-4 py-3">
                           <div className="flex gap-2">
                             <button
+                              onClick={() => handleViewDetails(user.userId)}
+                              className="p-2 rounded-lg transition-colors text-blue-500 hover:bg-blue-50"
+                              title="Voir les détails"
+                              disabled={loadingDetails}
+                            >
+                              <Eye size={20} />
+                            </button>
+                            <button
                               onClick={() => handleToggleAdmin(user.userId, !user.isAdmin)}
                               className={`p-2 rounded-lg transition-colors ${
                                 user.isAdmin
@@ -312,6 +354,138 @@ export default function AdminUserPage() {
           </div>
         </div>
       </div>
+
+      <Modal
+        isOpen={isModalOpen}
+        onClose={handleCloseModal}
+        title="Détails de l'utilisateur"
+        size="lg"
+      >
+        {selectedUser && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">Informations personnelles</h3>
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-xs text-gray-500">Prénom</p>
+                    <p className="font-medium">{selectedUser.firstName || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Nom</p>
+                    <p className="font-medium">{selectedUser.lastName || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Email</p>
+                    <p className="font-medium">{selectedUser.email}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">ID Utilisateur</p>
+                    <p className="font-mono text-sm text-gray-600">{selectedUser.userId}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">Informations entreprise</h3>
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-xs text-gray-500">Nom de l'entreprise</p>
+                    <p className="font-medium">{selectedUser.companyName || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">SIRET</p>
+                    <p className="font-medium">{selectedUser.siret || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Numéro de TVA</p>
+                    <p className="font-medium">{selectedUser.vatNumber || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Téléphone</p>
+                    <p className="font-medium">{selectedUser.companyPhone || '-'}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t pt-6">
+              <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">Informations Shopify</h3>
+              <div>
+                <p className="text-xs text-gray-500">Domaine Shopify</p>
+                <p className="font-medium">
+                  {selectedUser.shopDomain ? `${selectedUser.shopDomain}.myshopify.com` : '-'}
+                </p>
+              </div>
+            </div>
+
+            <div className="border-t pt-6">
+              <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">Statut et permissions</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <p className="text-xs text-gray-500 mb-2">Statut du compte</p>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedUser.confirmed && (
+                      <span className="px-3 py-1 text-sm bg-green-100 text-green-700 rounded-full">
+                        ✓ Confirmé
+                      </span>
+                    )}
+                    {selectedUser.rejected && (
+                      <span className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded-full">
+                        ✗ Rejeté
+                      </span>
+                    )}
+                    {!selectedUser.confirmed && !selectedUser.rejected && (
+                      <span className="px-3 py-1 text-sm bg-yellow-100 text-yellow-700 rounded-full">
+                        ⏳ En attente
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 mb-2">Permissions</p>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedUser.isAdmin ? (
+                      <span className="px-3 py-1 text-sm bg-purple-100 text-purple-700 rounded-full">
+                        👑 Administrateur
+                      </span>
+                    ) : (
+                      <span className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-full">
+                        👤 Utilisateur
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t pt-6">
+              <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">Tarification</h3>
+              <div>
+                <p className="text-xs text-gray-500">Catégorie de prix</p>
+                <p className="font-medium">{selectedUser.priceCategory || '-'}</p>
+              </div>
+            </div>
+
+            <div className="border-t pt-6">
+              <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">Dates</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <p className="text-xs text-gray-500">Date de création</p>
+                  <p className="font-medium">
+                    {selectedUser.createdAt
+                      ? new Date(selectedUser.createdAt).toLocaleString('fr-FR', {
+                          dateStyle: 'long',
+                          timeStyle: 'short',
+                        })
+                      : '-'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
     </MainLayout>
   );
 }
