@@ -141,7 +141,7 @@ export default function ShoppingCartPage() {
           price: getNumericPrice(item).toFixed(2),
         }));
 
-      const response = await fetch('https://api.eurodesignfrancepro.fr/api/bulk-import', {
+      const response = await fetch('http://localhost:3002/api/bulk-import', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
