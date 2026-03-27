@@ -23,6 +23,8 @@ services:
     tmpfs:
       - /tmp
       - /app/.next/cache:uid=1000,gid=1000,mode=1777
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - app-network
 
