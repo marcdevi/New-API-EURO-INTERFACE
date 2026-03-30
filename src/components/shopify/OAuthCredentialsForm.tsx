@@ -85,7 +85,10 @@ export function OAuthCredentialsForm({ existingConfig }: Props) {
         label="Domaine Shopify"
         type="text"
         value={shopDomain}
-        onChange={(e) => setShopDomain(e.target.value)}
+        onChange={(e) => {
+          setShopDomain(e.target.value);
+          if (step === 'error') { setStep('idle'); setErrorMsg(''); }
+        }}
         required
         placeholder="ma-boutique"
       />
@@ -101,7 +104,10 @@ export function OAuthCredentialsForm({ existingConfig }: Props) {
         label="Client ID"
         type="text"
         value={clientId}
-        onChange={(e) => setClientId(e.target.value)}
+        onChange={(e) => {
+          setClientId(e.target.value);
+          if (step === 'error') { setStep('idle'); setErrorMsg(''); }
+        }}
         required
       />
 
@@ -110,7 +116,10 @@ export function OAuthCredentialsForm({ existingConfig }: Props) {
         label={`Client Secret${existingConfig?.has_secret ? ' (un secret est déjà enregistré)' : ''}`}
         type="password"
         value={clientSecret}
-        onChange={(e) => setClientSecret(e.target.value)}
+        onChange={(e) => {
+          setClientSecret(e.target.value);
+          if (step === 'error') { setStep('idle'); setErrorMsg(''); }
+        }}
         required
         placeholder="••••••••••••••••"
         autoComplete="new-password"

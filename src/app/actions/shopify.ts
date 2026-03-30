@@ -48,14 +48,22 @@ export async function saveOAuthCredentials(
   }
 
   try {
+    const supabase = await createSupabaseServerClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      console.warn('[saveOAuthCredentials] UNAUTHORIZED_ACCESS', {
+        action: 'saveOAuthCredentials',
+        reason: 'No valid session',
+        shop_domain
+      });
+      return { success: false, error: 'Utilisateur non authentifié' };
+    }
+
     const baseUrl = process.env.API_BASE_URL;
     const secretKey = process.env.API_SECRET_KEY;
 
-    console.log('[saveOAuthCredentials] Config check:', {
-      baseUrl,
-      hasSecretKey: !!secretKey,
-      url: `${baseUrl}/api/shopify/credentials`
-    });
+    console.log('[saveOAuthCredentials] Sending credentials for domain:', shop_domain);
 
     const res = await fetch(`${baseUrl}/api/shopify/credentials`, {
       method: 'POST',
@@ -74,7 +82,7 @@ export async function saveOAuthCredentials(
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: 'Erreur API' }));
-      console.log('[saveOAuthCredentials] Error response:', err);
+      console.log('[saveOAuthCredentials] API returned error status:', res.status);
 
       // Build a user-friendly message, prioritising token_error details for 422
       let userMessage = err.error ?? `Erreur ${res.status}`;
