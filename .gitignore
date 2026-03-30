@@ -29,6 +29,7 @@ yarn-error.log*
 .vscode/
 *.swp
 *.swo
+.agent/
 
 # OS
 .DS_Store
