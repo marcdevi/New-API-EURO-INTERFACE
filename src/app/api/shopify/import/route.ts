@@ -3,25 +3,9 @@ import { createSupabaseAdminClient } from '@/lib/supabase/server';
 import { successResponse, errorResponse, ErrorCodes } from '@/lib/api/response';
 import { requireAuth, isAuthResult } from '@/lib/api/auth';
 import { shopifyImportSchema } from '@/lib/schemas';
-import { decryptToken, securityLog, getClientIp } from '@/lib/security';
+import { securityLog, getClientIp } from '@/lib/security';
 import { checkRateLimit } from '@/lib/ratelimit';
-import { getProductsByIds } from '@/lib/services/product.service';
-
-interface ShopifyProductPayload {
-  product: {
-    title: string;
-    body_html: string;
-    vendor: string;
-    product_type: string;
-    status: string;
-    variants: Array<{
-      price: string;
-      sku: string;
-      inventory_management: string;
-    }>;
-    images?: Array<{ src: string; position: number }>;
-  };
-}
+import { ensureFreshToken, ShopifyTokenError } from '@/lib/shopify/token';
 
 export async function POST(request: NextRequest) {
   const ip = getClientIp(request.headers);
@@ -36,6 +20,12 @@ export async function POST(request: NextRequest) {
 
   if (!isAuthResult(authResult)) {
     return authResult;
+  }
+
+  const baseUrl = process.env.API_BASE_URL;
+  if (!baseUrl) {
+    console.error('[Shopify] API_BASE_URL not configured');
+    return errorResponse(ErrorCodes.INTERNAL_ERROR, 'API externe non configurée', 500);
   }
 
   try {
@@ -55,177 +45,101 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    let accessToken: string;
+    let shopDomain: string;
+    try {
+      const tokenResult = await ensureFreshToken(authResult.user.id);
+      accessToken = tokenResult.accessToken;
+      shopDomain = tokenResult.fullDomain;
+    } catch (tokenError: unknown) {
+      if (tokenError instanceof ShopifyTokenError) {
+        return errorResponse(ErrorCodes.VALIDATION_ERROR, tokenError.message, 400);
+      }
+      console.error('[Shopify] Token error:', tokenError);
+      return errorResponse(ErrorCodes.INTERNAL_ERROR, 'Erreur de configuration Shopify', 500);
+    }
+
     const adminClient = createSupabaseAdminClient() as any;
 
-    const { data: shopifyConfig, error: configError } = await adminClient
-      .from('shopify_config')
-      .select('shop_domain, access_token')
-      .eq('id', authResult.user.id)
-      .single();
-
-    if (configError || !shopifyConfig?.access_token) {
-      return errorResponse(
-        ErrorCodes.VALIDATION_ERROR,
-        'Configuration Shopify non trouvée. Veuillez configurer votre boutique.',
-        400
-      );
-    }
-
-    let accessToken: string;
-    try {
-      // NOTE: en BDD legacy, la colonne s'appelle `access_token`.
-      // On y stocke une valeur chiffrée (AES-256-GCM) et on déchiffre ici.
-      accessToken = decryptToken(shopifyConfig.access_token);
-    } catch (decryptError) {
-      console.error('[Shopify] Token decryption error:', decryptError);
-      return errorResponse(ErrorCodes.INTERNAL_ERROR, 'Erreur de configuration', 500);
-    }
-
-    const fullDomain = shopifyConfig.shop_domain?.includes('.')
-      ? shopifyConfig.shop_domain
-      : `${shopifyConfig.shop_domain}.myshopify.com`;
+    const incomingIds = validation.data.products.map((p: { id: number; price: number }) => p.id);
 
     const { data: existingListings } = await adminClient
       .from('shopify_listings')
       .select('local_product_id')
       .eq('user_id', authResult.user.id)
-      .in('local_product_id', validation.data.productIds);
+      .in('local_product_id', incomingIds);
 
-    const existingIds = new Set((existingListings || []).map((l: any) => l.local_product_id));
-    const newProductIds = validation.data.productIds.filter((id) => !existingIds.has(id));
+    const existingIds = new Set((existingListings || []).map((l: { local_product_id: number }) => l.local_product_id));
+    const selectedProducts = validation.data.products.filter((p: { id: number; price: number }) => !existingIds.has(p.id));
 
-    if (newProductIds.length === 0) {
+    if (selectedProducts.length === 0) {
       return successResponse({
         message: 'Tous les produits sont déjà importés',
-        imported: 0,
-        skipped: validation.data.productIds.length,
-        errors: [],
+        queued: 0,
+        skipped: incomingIds.length,
       });
     }
 
-    const products = await getProductsByIds(newProductIds, authResult.priceCategory);
+    const newProductIds = selectedProducts.map((p: { id: number; price: number }) => p.id);
 
-    const results: Array<{
-      productId: number;
-      success: boolean;
-      shopifyProductId?: string;
-      shopifyVariantId?: string;
-      error?: string;
-    }> = [];
+    const upstreamRes = await fetch(`${baseUrl}/api/bulk-import`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        shopDomain,
+        accessToken,
+        selectedProducts,
+        userId: authResult.user.id,
+      }),
+    });
 
-    for (const product of products) {
-      try {
-        const price = parseFloat(product.displayPrice.replace(' €', '').replace(',', '.')) || 0;
+    const upstreamData = await upstreamRes.json().catch(() => null);
 
-        const payload: ShopifyProductPayload = {
-          product: {
-            title: product.nom,
-            body_html: product.description || '',
-            vendor: 'Eurodesign',
-            product_type: product.category?.name || 'Général',
-            status: 'active',
-            variants: [
-              {
-                price: price.toFixed(2),
-                sku: product.skuEuro || product.id.toString(),
-                inventory_management: 'shopify',
-              },
-            ],
-          },
-        };
-
-        if (product.images.length > 0) {
-          payload.product.images = product.images.map((url, index) => ({
-            src: url,
-            position: index + 1,
-          }));
-        }
-
-        const shopifyUrl = `https://${fullDomain}/admin/api/2024-01/products.json`;
-        const response = await fetch(shopifyUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Shopify-Access-Token': accessToken,
-          },
-          body: JSON.stringify(payload),
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          results.push({
-            productId: product.id,
-            success: true,
-            shopifyProductId: data.product.id.toString(),
-            shopifyVariantId: data.product.variants[0]?.id?.toString(),
-          });
-        } else {
-          const errorText = await response.text();
-          console.error(`[Shopify] Import error for product ${product.id}:`, errorText);
-          results.push({
-            productId: product.id,
-            success: false,
-            error: `Shopify error: ${response.status}`,
-          });
-        }
-      } catch (productError) {
-        console.error(`[Shopify] Import exception for product ${product.id}:`, productError);
-        results.push({
-          productId: product.id,
-          success: false,
-          error: 'Erreur lors de l\'import',
-        });
-      }
+    if (!upstreamRes.ok) {
+      console.error('[Shopify] Upstream bulk-import error:', upstreamData);
+      return errorResponse(
+        ErrorCodes.INTERNAL_ERROR,
+        upstreamData?.error || `Erreur API externe (${upstreamRes.status})`,
+        502
+      );
     }
 
-    const successfulImports = results.filter((r) => r.success);
-    if (successfulImports.length > 0) {
-      const listings = successfulImports.map((r) => ({
-        user_id: authResult.user.id,
-        local_product_id: r.productId,
-        shopify_product_id: r.shopifyProductId || null,
-        shopify_variant_id: r.shopifyVariantId || null,
-        pushed_at: new Date().toISOString(),
-      }));
+    const listings = newProductIds.map((productId) => ({
+      user_id: authResult.user.id,
+      local_product_id: productId,
+      pushed_at: new Date().toISOString(),
+    }));
 
-      const { error: listingsError } = await adminClient
-        .from('shopify_listings')
-        .upsert(listings, { onConflict: 'user_id,local_product_id' });
+    const { error: listingsError } = await adminClient
+      .from('shopify_listings')
+      .upsert(listings, { onConflict: 'user_id,local_product_id' });
 
-      if (listingsError) {
-        console.error('[Shopify] Listings save error:', listingsError);
-      }
-
-      const { error: cartError } = await adminClient
-        .from('panier_dropshipping')
-        .delete()
-        .eq('user_id', authResult.user.id)
-        .in('product_id', successfulImports.map((r) => r.productId));
-
-      if (cartError) {
-        console.error('[Shopify] Cart cleanup error:', cartError);
-      }
+    if (listingsError) {
+      console.error('[Shopify] Listings save error:', listingsError);
     }
 
-    securityLog('SHOPIFY_IMPORT_COMPLETED', {
+    const { error: cartError } = await adminClient
+      .from('panier_dropshipping')
+      .delete()
+      .eq('user_id', authResult.user.id)
+      .in('product_id', newProductIds);
+
+    if (cartError) {
+      console.error('[Shopify] Cart cleanup error:', cartError);
+    }
+
+    securityLog('SHOPIFY_IMPORT_QUEUED', {
       userId: authResult.user.id,
       ip,
-      details: {
-        requested: validation.data.productIds.length,
-        imported: successfulImports.length,
-        failed: results.filter((r) => !r.success).length,
-      },
+      details: { queued: newProductIds.length, skipped: existingIds.size, jobId: upstreamData?.jobId },
     });
 
     return successResponse({
-      message: `${successfulImports.length} produit(s) importé(s) avec succès`,
-      imported: successfulImports.length,
+      message: `${newProductIds.length} produit(s) envoyé(s) à la file d'import`,
+      queued: newProductIds.length,
       skipped: existingIds.size,
-      failed: results.filter((r) => !r.success).length,
-      errors: results.filter((r) => !r.success).map((r) => ({
-        productId: r.productId,
-        error: r.error || 'Erreur inconnue',
-      })),
+      jobId: upstreamData?.jobId,
+      status: upstreamData?.status || 'queued',
     });
   } catch (error) {
     console.error('[Shopify] Import unexpected error:', error);

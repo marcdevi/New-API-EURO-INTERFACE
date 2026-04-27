@@ -30,13 +30,6 @@ export default function ShoppingCartPage() {
     return value !== null ? `${value.toFixed(2)} €` : 'Prix indisponible';
   };
 
-  const getNumericPrice = (item: CartItemDTO) => {
-    if (priceCategory === 'dropshipping') return 0;
-    const key = priceCategory === 'remise' ? 'Prix_remise' : `Prix_${priceCategory}`;
-    const raw = item.product.prices?.[key];
-    return typeof raw === 'number' ? raw : 0;
-  };
-
   const fetchCart = async () => {
     setLoading(true);
     try {
@@ -112,70 +105,56 @@ export default function ShoppingCartPage() {
   };
 
   const handleImport = async () => {
-    const productIds = selectedItems.size > 0 
-      ? Array.from(selectedItems) 
-      : cartItems.map((item) => item.productId);
+    const itemsToImport = selectedItems.size > 0
+      ? cartItems.filter((item) => selectedItems.has(item.productId))
+      : cartItems;
 
-    if (productIds.length === 0) return;
+    if (itemsToImport.length === 0) return;
+
+    const productsWithPrices = itemsToImport.map((item) => ({
+      id: item.productId,
+      price: (() => {
+        const raw = getDisplayPrice(item);
+        return parseFloat(raw.replace(' €', '').replace(',', '.')) || 0;
+      })(),
+    }));
 
     setImporting(true);
     setImportResult(null);
 
     try {
-      const credsRes = await fetch('/api/shopify/credentials');
-      const creds = await credsRes.json();
+      const chunkSize = 100;
+      let totalQueued = 0;
+      let totalSkipped = 0;
 
-      if (!creds?.success || !creds?.data?.shopDomain || !creds?.data?.accessToken) {
-        setImportResult({
-          success: false,
-          message: 'Configuration Shopify non trouvée. Veuillez configurer votre boutique.',
+      for (let i = 0; i < productsWithPrices.length; i += chunkSize) {
+        const chunk = productsWithPrices.slice(i, i + chunkSize);
+
+        const response = await fetch('/api/shopify/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ products: chunk }),
         });
-        return;
+
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+          setImportResult({
+            success: false,
+            message: data.error?.message || `Erreur lors de l'import (${response.status})`,
+          });
+          return;
+        }
+        totalQueued += data.data.queued || 0;
+        totalSkipped += data.data.skipped || 0;
       }
-
-      const productsToSend = cartItems
-        .filter((item) => productIds.includes(item.productId))
-        .map((item) => ({
-          id: item.productId,
-          sku: item.product.skuEuro,
-          price: getNumericPrice(item).toFixed(2),
-        }));
-
-      const response = await fetch('/api/shopify/bulk-import', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          shopDomain: `${creds.data.shopDomain}.myshopify.com`,
-          accessToken: creds.data.accessToken,
-          selectedProducts: productsToSend,
-        }),
-      });
-
-      if (!response.ok) {
-        const text = await response.text();
-        setImportResult({
-          success: false,
-          message: `Erreur lors de l'import (${response.status}): ${text}`,
-        });
-        return;
-      }
-
-      await response.json();
 
       setImportResult({
         success: true,
-        message: `${productsToSend.length} produit(s) envoyé(s) à Shopify`,
-        imported: productsToSend.length,
+        message: totalQueued > 0
+          ? `${totalQueued} produit(s) envoyé(s) à la file d'import Shopify${totalSkipped > 0 ? ` (${totalSkipped} déjà importé(s))` : ''}`
+          : `Tous les produits sont déjà importés (${totalSkipped})`,
+        imported: totalQueued,
         failed: 0,
-      });
-
-      // Option: vider le panier des produits envoyés
-      await fetch('/api/cart', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productIds }),
       });
 
       fetchCart();

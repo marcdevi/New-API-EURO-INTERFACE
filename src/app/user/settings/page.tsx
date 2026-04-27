@@ -1,6 +1,7 @@
 import MainLayout from '@/components/layout/MainLayout';
 import { ConnectionStatusBadge } from '@/components/shopify/ConnectionStatusBadge';
 import { ShopifySettingsTabs } from '@/components/shopify/ShopifySettingsTabs';
+import { RefreshTokenButton } from '@/components/shopify/RefreshTokenButton';
 import { getShopifyConfig } from '@/lib/api/shopify';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 
@@ -50,6 +51,13 @@ export default async function SettingsPage() {
             <h2 className="mb-3 text-lg font-semibold text-gray-800">Statut de connexion</h2>
             <ConnectionStatusBadge authMethod={config?.auth_method ?? null} />
           </section>
+
+          {config?.auth_method === 'oauth' && (
+            <section className="rounded-xl bg-white p-6 shadow-sm">
+              <h2 className="mb-4 text-lg font-semibold text-gray-800">Renouvellement du token</h2>
+              <RefreshTokenButton />
+            </section>
+          )}
 
           <section className="rounded-xl bg-white p-6 shadow-sm">
             <h2 className="mb-4 text-lg font-semibold text-gray-800">Configuration Shopify</h2>

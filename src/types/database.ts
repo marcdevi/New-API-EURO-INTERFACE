@@ -64,6 +64,10 @@ export interface Database {
           id: string;
           shop_domain: string | null;
           access_token_encrypted: string | null;
+          client_id: string | null;
+          client_secret_encrypted: string | null;
+          auth_method: string | null;
+          token_expires_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -71,6 +75,10 @@ export interface Database {
           id: string;
           shop_domain?: string | null;
           access_token_encrypted?: string | null;
+          client_id?: string | null;
+          client_secret_encrypted?: string | null;
+          auth_method?: string | null;
+          token_expires_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -78,6 +86,10 @@ export interface Database {
           id?: string;
           shop_domain?: string | null;
           access_token_encrypted?: string | null;
+          client_id?: string | null;
+          client_secret_encrypted?: string | null;
+          auth_method?: string | null;
+          token_expires_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -87,19 +99,19 @@ export interface Database {
           id: number;
           user_id: string;
           product_id: number;
-          created_at: string;
+          added_at: string;
         };
         Insert: {
           id?: number;
           user_id: string;
           product_id: number;
-          created_at?: string;
+          added_at?: string;
         };
         Update: {
           id?: number;
           user_id?: string;
           product_id?: number;
-          created_at?: string;
+          added_at?: string;
         };
       };
       shopify_listings: {

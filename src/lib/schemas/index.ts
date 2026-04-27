@@ -118,7 +118,12 @@ export const cartRemoveSchema = z.object({
 });
 
 export const shopifyImportSchema = z.object({
-  productIds: productIdsSchema,
+  products: z.array(
+    z.object({
+      id: z.number().int().positive(),
+      price: z.number().min(0),
+    })
+  ).min(1, 'Au moins un produit requis'),
 });
 
 export type CreateProfileInput = z.infer<typeof createProfileSchema>;

@@ -2,6 +2,8 @@
 
 import { SaveCredentialsInput, SaveCredentialsResult } from '@/types/shopify';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { createSupabaseAdminClient } from '@/lib/supabase/server';
+import { encryptToken } from '@/lib/security';
 
 export async function saveShopifyConfigToDB(
   shopDomain: string
@@ -47,6 +49,13 @@ export async function saveOAuthCredentials(
     return { success: false, error: 'Tous les champs sont requis' };
   }
 
+  const baseUrl = process.env.API_BASE_URL;
+  const secretKey = process.env.API_SECRET_KEY;
+
+  if (!baseUrl || !secretKey) {
+    return { success: false, error: 'Configuration API manquante' };
+  }
+
   try {
     const supabase = await createSupabaseServerClient();
     const { data: { user } } = await supabase.auth.getUser();
@@ -60,12 +69,8 @@ export async function saveOAuthCredentials(
       return { success: false, error: 'Utilisateur non authentifié' };
     }
 
-    const baseUrl = process.env.API_BASE_URL;
-    const secretKey = process.env.API_SECRET_KEY;
-
-    console.log('[saveOAuthCredentials] Sending credentials for domain:', shop_domain);
-
-    const res = await fetch(`${baseUrl}/api/shopify/credentials`, {
+    // 1. Delegate token generation to the external API
+    const externalRes = await fetch(`${baseUrl}/api/shopify/credentials`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -74,29 +79,35 @@ export async function saveOAuthCredentials(
       body: JSON.stringify({ shop_domain, client_id, client_secret }),
     });
 
-    console.log('[saveOAuthCredentials] Response:', {
-      status: res.status,
-      ok: res.ok,
-      statusText: res.statusText
-    });
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: 'Erreur API' }));
-      console.log('[saveOAuthCredentials] API returned error status:', res.status);
-
-      // Build a user-friendly message, prioritising token_error details for 422
-      let userMessage = err.error ?? `Erreur ${res.status}`;
-      if (res.status === 422 && err.token_error) {
-        // Common case: the Shopify shop does not exist or credentials are wrong
-        userMessage = `Échec de la connexion Shopify : Shopify OAuth échoué (404)` //${err.token_error};
-      }
-
-      return { success: false, error: userMessage };
+    if (!externalRes.ok) {
+      const body = await externalRes.json().catch(() => ({ error: 'Erreur inconnue' }));
+      console.error('[saveOAuthCredentials] External API error:', body);
+      return {
+        success: false,
+        error: body.error || `Erreur API externe (${externalRes.status}). Vérifiez vos credentials.`,
+      };
     }
 
+    // 2. Save credentials locally (encrypted) without doing the OAuth exchange here
+    const adminClient = createSupabaseAdminClient() as any;
+
+    const { error: saveError } = await adminClient.from('shopify_config').upsert({
+      id: user.id,
+      shop_domain,
+      client_id,
+      client_secret_encrypted: encryptToken(client_secret),
+      auth_method: 'oauth',
+    });
+
+    if (saveError) {
+      console.error('[saveOAuthCredentials] Supabase save error:', saveError);
+      return { success: false, error: `Erreur lors de la sauvegarde locale : ${saveError.message}` };
+    }
+
+    console.log('[saveOAuthCredentials] OAuth configured for user:', user.id, 'domain:', shop_domain);
     return { success: true };
   } catch (error) {
-    console.error('[saveOAuthCredentials] Network error:', error);
-    return { success: false, error: `Impossible de joindre l'API: ${error instanceof Error ? error.message : 'Erreur inconnue'}` };
+    console.error('[saveOAuthCredentials] Unexpected error:', error);
+    return { success: false, error: `Erreur inattendue : ${error instanceof Error ? error.message : 'Erreur inconnue'}` };
   }
 }

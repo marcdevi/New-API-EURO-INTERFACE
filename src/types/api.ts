@@ -55,6 +55,16 @@ export interface ShopifyListingDTO {
   product: ProductDTO;
 }
 
+export interface MatchedProductDTO {
+  localProduct: ProductDTO;
+  shopifyProductId: string;
+  shopifyProductTitle: string;
+  shopifyProductUrl: string | null;
+  shopifyPrice: string | null;
+  source: 'imported' | 'matched';
+  syncedAt: string;
+}
+
 export interface PaginatedResponse<T> {
   items: T[];
   total: number;

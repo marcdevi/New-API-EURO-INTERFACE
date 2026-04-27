@@ -5,6 +5,7 @@ export interface ShopifyConfig {
   auth_method: AuthMethod;
   client_id: string | null;
   has_secret: boolean;
+  token_expires_at: string | null;
   created_at: string;
 }
 

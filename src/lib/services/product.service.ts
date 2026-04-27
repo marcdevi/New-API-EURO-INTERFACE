@@ -129,7 +129,7 @@ export async function searchProducts(params: {
     `,
       { count: 'exact' }
     )
-    .eq('activite', true);
+    .neq('activite', false);
 
   if (params.search) {
     const sanitizedSearch = params.search
@@ -193,12 +193,12 @@ export async function searchProductIds(params: {
   let query = supabase
     .from('PRODUITS')
     .select('id')
-    .eq('activite', true);
+    .neq('activite', false);
 
   if (params.search) {
     const sanitizedSearch = params.search
       .replace(/[%_\\]/g, '\\$&')
-      .replace(/['"`;]/g, '')
+      .replace(/['";`]/g, '')
       .substring(0, 100);
     query = query.or(`nom.ilike.%${sanitizedSearch}%,SKU_EURO.ilike.%${sanitizedSearch}%`);
   }
@@ -287,4 +287,51 @@ export async function getProductsByIds(
   return (data || []).map((raw) =>
     transformProduct(raw as unknown as RawProduct, priceCategory)
   );
+}
+
+export async function getProductsBySkus(
+  skus: string[],
+  priceCategory: string
+): Promise<ProductDTO[]> {
+  if (skus.length === 0) return [];
+
+  const supabase = createSupabaseAdminClient();
+
+  // Supabase .in() has a practical limit; chunk if needed
+  const chunkSize = 200;
+  const allProducts: ProductDTO[] = [];
+
+  for (let i = 0; i < skus.length; i += chunkSize) {
+    const chunk = skus.slice(i, i + chunkSize);
+
+    const { data, error } = await supabase
+      .from('PRODUITS')
+      .select(
+        `
+        id,
+        nom,
+        description,
+        SKU_EURO,
+        categorie,
+        IMAGES_PRODUITS(image_url),
+        PRIX(Prix_A, Prix_C, Prix_D, Prix_remise),
+        CONF_PRODUITS(dropshipping),
+        COLIS(*),
+        CATEGORIES(id, categorie_nom)
+      `
+      )
+      .in('SKU_EURO', chunk);
+
+    if (error) {
+      console.error('[ProductService] GetBySkus error:', error);
+      throw new Error('Erreur lors de la récupération des produits par SKU');
+    }
+
+    const products = (data || []).map((raw) =>
+      transformProduct(raw as unknown as RawProduct, priceCategory)
+    );
+    allProducts.push(...products);
+  }
+
+  return allProducts;
 }
