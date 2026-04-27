@@ -79,17 +79,10 @@ export default function ListedProductsPage() {
 
           {/* Stats */}
           {!loading && !error && (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
               <div className="bg-white rounded-lg shadow p-4">
                 <p className="text-sm text-gray-500">Total correspondances</p>
                 <p className="text-2xl font-bold text-gray-900">{products.length}</p>
-              </div>
-              <div className="bg-white rounded-lg shadow p-4">
-                <div className="flex items-center gap-2">
-                  <Upload size={16} className="text-blue-500" />
-                  <p className="text-sm text-gray-500">Importés via notre plateforme</p>
-                </div>
-                <p className="text-2xl font-bold text-blue-600">{importedCount}</p>
               </div>
               <div className="bg-white rounded-lg shadow p-4">
                 <div className="flex items-center gap-2">
@@ -189,6 +182,7 @@ export default function ListedProductsPage() {
                               fill
                               sizes="48px"
                               className="object-cover rounded"
+                              unoptimized
                             />
                           </div>
                           <div className="min-w-0">
