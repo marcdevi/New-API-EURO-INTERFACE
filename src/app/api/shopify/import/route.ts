@@ -61,25 +61,7 @@ export async function POST(request: NextRequest) {
 
     const adminClient = createSupabaseAdminClient() as any;
 
-    const incomingIds = validation.data.products.map((p: { id: number; price: number }) => p.id);
-
-    const { data: existingListings } = await adminClient
-      .from('shopify_listings')
-      .select('local_product_id')
-      .eq('user_id', authResult.user.id)
-      .in('local_product_id', incomingIds);
-
-    const existingIds = new Set((existingListings || []).map((l: { local_product_id: number }) => l.local_product_id));
-    const selectedProducts = validation.data.products.filter((p: { id: number; price: number }) => !existingIds.has(p.id));
-
-    if (selectedProducts.length === 0) {
-      return successResponse({
-        message: 'Tous les produits sont déjà importés',
-        queued: 0,
-        skipped: incomingIds.length,
-      });
-    }
-
+    const selectedProducts = validation.data.products;
     const newProductIds = selectedProducts.map((p: { id: number; price: number }) => p.id);
 
     const upstreamRes = await fetch(`${baseUrl}/api/bulk-import`, {
@@ -131,13 +113,13 @@ export async function POST(request: NextRequest) {
     securityLog('SHOPIFY_IMPORT_QUEUED', {
       userId: authResult.user.id,
       ip,
-      details: { queued: newProductIds.length, skipped: existingIds.size, jobId: upstreamData?.jobId },
+      details: { queued: newProductIds.length, skipped: 0, jobId: upstreamData?.jobId },
     });
 
     return successResponse({
       message: `${newProductIds.length} produit(s) envoyé(s) à la file d'import`,
       queued: newProductIds.length,
-      skipped: existingIds.size,
+      skipped: 0,
       jobId: upstreamData?.jobId,
       status: upstreamData?.status || 'queued',
     });
